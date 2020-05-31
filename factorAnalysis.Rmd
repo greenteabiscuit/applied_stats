@@ -1,0 +1,113 @@
+---
+title: "FactorAnalysis"
+output:
+  html_document:
+    code_folding: hide
+  html_notebook: default
+---
+
+
+```{r settings, message=FALSE}
+#|||||||||||||||||||||||||||||
+#encoding is UTF-8
+#|||||||||||||||||||||||||||||
+library(data.table)
+library(psych)
+library(nFactors)
+library(ggplot2)
+library(tidyverse)
+library(GPArotation)
+library(MVN)
+library(plyr)
+
+```
+
+
+##データについて
+
+```{r FA0}
+#データの読み込み
+gt_original <- read.csv(file="attitudes_dat.csv",header=T)
+
+dat <- gt_original;
+```
+
+#探索的因子分析
+##①最尤法
+###多変量正規分布検定
+```{r FA1}
+#最尤法
+#多変量正規分布検定
+mvn(data= scale(dat),mvnTest="mardia")
+```
+
+
+
+
+## 因子数の決定
+```{r FA6 , fig.height = 5, fig.width = 7}
+#固有値を求める
+eigenvals<-eigen(cor(dat))
+#平行分析を行う
+parallelAnalysis <- parallel(subject=nrow(dat),var=ncol(dat), rep=500,cent=.05)
+
+#データを処理＋スクリープロット
+x<-data.frame("Component"=1:length(eigenvals$values),"Actual data" = eigenvals$values, "Simulated data"=parallelAnalysis$eigen$qevpea)
+x<-gather(x,key="Type",value="Eigenvalue", -c("Component"))
+
+ggplot(data=x)+geom_line(aes(x=Component, y=Eigenvalue,color=Type), size=0.7)+geom_point(aes(x=Component, y=Eigenvalue,color=Type, shape=Type), size=2)+theme_bw(base_size = 14)+
+  ggtitle("Scree plot")+geom_hline(yintercept = 1, color="red", linetype="dashed")+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+```
+
+スクリーテストであればひじが曲がる角度ととらえられるので６が妥当となる。
+
+
+###因子分析のアウトプット（５の場合）
+```{r FA2}
+#因子分析
+#nfactors=因子数、rotate=回転法, fm=抽出法　詳細は: args(fa), #n.obs=サンプル数（適合度指標を求めるため使われる）
+fa_ml_5<-fa(cor(dat),nfactors=5,n.obs = nrow(dat),rotate="promax", scores = T, fm="mle")
+
+#cut=印刷閾値でそれ以下の負荷量を表示しない
+print(fa_ml_5, cut=0.3, digits=3)
+
+#因子得点を求める method=得点の計算方法
+scores<-factor.scores(dat,fa_ml, method="Thurstone")
+fa.diagram(fa_ml_5,cut=.24, simple=F, digits=2)
+```
+
+上記は5つファクターがある場合で、変数が散らばっている。以下はそれぞれのファクターで一番高い、または一番低いスコアを表す。
+
+ML1：ICAR1, ICAR2, ICAR3
+ML1は車の運転の心地よさと関連していることがわかる。
+
+ML2: IHS20, IHS21, IHS28, ...
+ここからML2は交通の利便性と関連していることがわかる。
+
+ML3: IHS25, IHS26, IHS29, IHS30, ...
+IHS25, IHS26は正で値が高い。
+IHS29, IHS30は負で値が小さい。
+これらは家の広さと関連していることがわかる。
+
+ML4: IPTNM17, IPTNM18,...
+自動車を使いたくないことと関連している。
+
+ML5: ICAR6, IPTNM12,...
+こちらは財政状況と関わっていることがわかる。
+
+
+###因子分析のアウトプット（6の場合）
+```{r FA2}
+#因子分析
+#nfactors=因子数、rotate=回転法, fm=抽出法　詳細は: args(fa), #n.obs=サンプル数（適合度指標を求めるため使われる）
+fa_ml_6<-fa(cor(dat),nfactors=6,n.obs = nrow(dat),rotate="promax", scores = T, fm="mle")
+
+#cut=印刷閾値でそれ以下の負荷量を表示しない
+print(fa_ml_6, cut=0.3, digits=3)
+
+#因子得点を求める method=得点の計算方法
+scores<-factor.scores(dat,fa_ml_6, method="Thurstone")
+fa.diagram(fa_ml_6,cut=.24, simple=F, digits=2)
+```
