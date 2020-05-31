@@ -1,0 +1,207 @@
+---
+title: "ClusterAnalysis"
+output:
+  html_document:
+    code_folding: hide
+  html_notebook: default
+---
+
+
+```{r settings, message=FALSE}
+#|||||||||||||||||||||||||||||
+#encoding is UTF-8
+#|||||||||||||||||||||||||||||
+library(cluster)
+library(factoextra)
+library(dendextend)
+library(data.table)
+library(fpc)
+```
+
+
+#1)データの読み込み
+
+##データについて
+データは兵庫県の市区町村の2017年の死亡人数、婚姻件数、出産数、離婚件数の4つの要素に注目した。
+以下ではデータの前処理を行う。
+```{r NHCA1}
+#データの読み込み
+gt_original <- read.csv(file="kobe_city_data.csv",header=T,fileEncoding="SJIS",row.names="地域")
+
+#データの標準化
+gt <- gt_original[, c("A4200_死亡数.人.", "A9101_婚姻件数.組.", "A4101_出生数.人.", "A9201_離婚件数.組.")]
+
+gt$A4200_死亡数.人. = as.numeric(gt$A4200_死亡数.人.)
+gt$A9101_婚姻件数.組. = as.numeric(gt$A9101_婚姻件数.組.)
+gt$A4101_出生数.人. = as.numeric(gt$A4101_出生数.人.)
+gt$A9201_離婚件数.組. = as.numeric(gt$A9201_離婚件数.組.)
+gt<-scale(gt)
+```
+
+
+```{r}
+gt_original
+```
+
+###東京のデータの距離行列の視覚化
+```{r NHCA2}
+
+dm<-daisy(gt)
+fviz_dist(dm)
+```
+
+###最適なクラスター数を求める(elbow method)
+
+以下のエルボー法から最適なクラスター数は3であることがわかる。
+```{r NHCA3}
+#k平均法クラスタリングの推定
+set.seed(561274)#毎同じ結果が出るようにseedを設定する（整数であれば何でもいいです）
+kmgt<-kmeans(gt,centers=3,nstart=25) #centersはクラスター数を設定する
+
+#最適なクラスター数の図(elbow method)
+#xinterceptは垂直線の位置を設定する（適切なクラスター数は図を見ながら自分で決める）
+fviz_nbclust(gt, kmeans, method = "wss") + geom_vline(xintercept = 3, linetype = 2)
+```
+
+###クラスタ－の記述
+```{r NHCA4}
+#クラスタ－の記述
+aggregate(gt,by=list(cluster=kmgt$cluster),mean)
+```
+###　
+###ソリューションを視覚化する
+
+こちらのクラスターのプロットから、神戸市内のほとんどの市区町村が青いクラスターに、明石、尼崎、姫路、西宮など神戸市に近い市区町村が緑のクラスターに、そのほかの地域が赤いクラスターに入っていることがわかる。
+
+```{r NHCA5}
+kmgt2<-cbind(gt,cluster= kmgt$cluster)#クラスターの情報を元データと結合する
+fviz_cluster(kmgt,data=gt, ellipse.type = "euclid", star.plot = TRUE, repel = T, ggtheme = theme_bw())
+```
+
+
+###樹形図
+
+緑の樹形図には神戸市の市区町村が多く入っていること、右側の青い樹形図には淡路島の市区町村が入っていることがわかる。
+もともとの市区町村の規模が樹形図の形を左右しているともいえる。
+
+```{r HCA2}
+#カッコいい樹形図
+#kはクラスター数を設定する（色分けて表示する）
+#k_colorsはカラ－を設定する（NULLの場合デフォルトのいるを使う）
+ca_agnes<-agnes(dm, stand = TRUE, metric = "euclidean",method = "ward")
+dg_agnes<-fviz_dend(ca_agnes, k = 6, cex = 0.5,  k_colors = NULL ,color_labels_by_k = TRUE, rect = TRUE) 
+print(dg_agnes)
+```
+
+
+#3)クラスタリングの検証
+###クラスタリング傾向
+```{r val1}
+#東京のデータのクラスタリング傾向の計算
+clusTend<-get_clust_tendency(gt,n=nrow(gt)-1,graph = T)
+print("ホップキンス値")
+clusTend$hopkins_stat#ホップキンス値
+clusTend$plot
+
+#一様分布に従ったデータを生成する
+v1<-runif(62,-2,2)
+v2<-runif(62,-2,2)
+v3<-runif(62,-2,2)
+v4<-runif(62,-2,2)
+rdt<-data.table(v1,v2,v3,v4)
+#一様分布に従ったデータタのクラスタリング傾向の計算
+clusTendR<-get_clust_tendency(rdt,n=nrow(rdt)-1,graph = T)
+print("ホップキンス値")
+clusTendR$hopkins_stat#ホップキンス値
+clusTendR$plot
+```
+
+#3)内的妥当性の検証（kmeansの場合）
+```{r val2}
+#内的妥当性の検証（3クラスターのソリューション）
+#FUNclusterはクラスタリング法を設定する（詳細はargs(eclust)）
+kmgt2<-eclust(gt, FUNcluster="kmeans", k = 3, nstart = 25, graph = F)
+
+#ソリューションの図
+fviz_cluster( kmgt2, geom = "point", ellipse.type = "euclid", star.plot = T,repel = T,ggtheme = theme_bw())
+```
+
+###シルエット係数
+#####（注意：スライドではクラスター1と2は逆となっているは結果は同じです)
+```{r val3}
+#シルエット図
+fviz_silhouette(kmgt2, ggtheme = theme_classic())
+
+#シルエット係数
+print("#シルエット係数")
+kmgt2$silinfo
+```
+
+
+## 階層型の場合
+
+```{r}
+#内的妥当性の検証（3クラスターのソリューション）
+#FUNclusterはクラスタリング法を設定する（詳細はargs(eclust)）
+kmgt2_diana<-eclust(gt, FUNcluster="diana", k = 3, nstart = 25, graph = F)
+
+#ソリューションの図
+fviz_cluster( kmgt2_diana, geom = "point", ellipse.type = "euclid", star.plot = T,repel = T,ggtheme = theme_bw())
+
+#シルエット図
+fviz_silhouette(kmgt2_diana, ggtheme = theme_classic())
+
+#シルエット係数
+print("#シルエット係数")
+kmgt2_diana$silinfo
+```
+
+```{r}
+#内的妥当性の検証（3クラスターのソリューション）
+#FUNclusterはクラスタリング法を設定する（詳細はargs(eclust)）
+kmgt2_agnes<-eclust(gt, FUNcluster="agnes", k = 3, nstart = 25, graph = F)
+
+#ソリューションの図
+fviz_cluster( kmgt2_agnes, geom = "point", ellipse.type = "euclid", star.plot = T,repel = T,ggtheme = theme_bw())
+
+#シルエット図
+fviz_silhouette(kmgt2_agnes, ggtheme = theme_classic())
+
+#シルエット係数
+print("#シルエット係数")
+kmgt2_agnes$silinfo
+```
+
+
+###　
+###ダーン指標（非階層）
+```{r val4}
+#ダーン指標を含む様々な評価指標
+kmgt2_stats<- cluster.stats( dist(gt), kmgt2$cluster)
+
+#ダーン指標
+kmgt2_stats$dunn 
+
+```
+
+###ダーン指標（agnes）
+```{r val4}
+#ダーン指標を含む様々な評価指標
+kmgt2_agnes_stats<- cluster.stats( dist(gt), kmgt2_agnes$cluster)
+
+#ダーン指標
+kmgt2_agnes_stats$dunn 
+
+```
+
+###ダーン指標（diana）
+```{r val4}
+#ダーン指標を含む様々な評価指標
+kmgt2_diana_stats<- cluster.stats( dist(gt), kmgt2_diana$cluster)
+
+#ダーン指標
+kmgt2_diana_stats$dunn 
+
+```
+
+上記からagnesのダーン指標が0.415と一番高いことがわかる。
