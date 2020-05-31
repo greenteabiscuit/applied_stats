@@ -1,0 +1,168 @@
+---
+title: "PCA　－　主成分分析"
+output:
+  html_document:
+    code_folding: hide
+  html_notebook: default
+
+---
+
+```{r settings, message=FALSE}
+#|||||||||||||||||||||||||||||
+#encoding is UTF-8
+#|||||||||||||||||||||||||||||
+library(factoextra)
+library(data.table)
+library(FactoMineR)
+library(corrplot)
+library(ggplot2)
+library(ggrepel)
+library(plyr)
+```
+
+#①データの関係性を把握する
+
+##データについて
+データは兵庫県の市区町村の2017年の死亡人数、婚姻件数、出産数、離婚件数の4つの要素に注目した。
+以下ではデータの前処理を行う。
+```{r pca1　, fig.height = 9, fig.width = 9, fig.align="center"}
+#データを読み込む
+
+gt_original <- read.csv(file="kobe_city_data.csv",header=T,fileEncoding="SJIS",row.names="地域")
+
+gt <- gt_original[, c("A4200_死亡数.人.", "A9101_婚姻件数.組.", "A4101_出生数.人.", "A9201_離婚件数.組.")]
+
+gt$A4200_死亡数.人. = as.numeric(gt$A4200_死亡数.人.)
+gt$A9101_婚姻件数.組. = as.numeric(gt$A9101_婚姻件数.組.)
+gt$A4101_出生数.人. = as.numeric(gt$A4101_出生数.人.)
+gt$A9201_離婚件数.組. = as.numeric(gt$A9201_離婚件数.組.)
+
+gt$A4200_死亡数.人. = log(gt$A4200_死亡数.人.)
+gt$A9101_婚姻件数.組. = log(gt$A9101_婚姻件数.組.)
+gt$A4101_出生数.人. = log(gt$A4101_出生数.人.)
+gt$A9201_離婚件数.組. = log(gt$A9201_離婚件数.組.)
+
+
+gt <- rename(gt, c("A4200_死亡数.人."="death", "A4101_出生数.人."="born", "A9201_離婚件数.組."="divorced", "A9101_婚姻件数.組."="married"))
+
+#データの関係性を把握する
+#相関行列
+cor(gt[,])
+#プロット
+plot(gt[,], pch=16, col="black" )
+```
+
+
+データが非線形であることから、対数変換を行なっておく。
+
+```{r pca1a　, fig.height = 9, fig.width = 9, fig.align="center"}
+#データを変換する。対数を取る（非線形性を削減のため）
+
+#変換後のデータの関係性を把握する
+#相関行列
+cor(gt[,])
+#プロット
+plot(gt[,], pch=16, col="black" )
+```
+
+#③主成分分析を行う
+```{r pca2}
+
+#主成分分析を行う
+gt_pca<-PCA(gt,graph = F)#標準化する場合
+#gt_pca<-PCA(gt,graph = F, scale.unit=F)#標準化せず
+
+#アウトプットリスト
+print(gt_pca)
+```
+
+
+
+
+#④ソリューションの詳細
+
+##固有値
+```{r pca3.000}
+eigenvals<-get_eigenvalue(gt_pca)
+print(eigenvals, digits=3)
+```
+
+
+##固有値の図
+```{r pca3.00, fig.height = 5, fig.width = 5, fig.align="center" }
+
+fviz_eig(gt_pca,choice = "eigenvalue",addlabels = T)
+```
+
+##寄与率の図
+```{r pca3, fig.height = 5, fig.width = 5, fig.align="center"}
+fviz_eig(gt_pca,choice="variance",addlabels = T)
+```
+
+##主成分係数
+```{r pca3.1}
+#変数に関する値
+var_vals<-gt_pca$var
+#主成分係数を求める
+pc_coef<-sweep(var_vals$coord,2,sqrt(gt_pca$eig[,1]),FUN="/")
+print(pc_coef,digits=3)
+```
+
+##負荷量
+```{r pca3.2}
+#負荷量
+pc_loading<-var_vals$coord
+print(pc_loading,digits=3)
+```
+
+##表現の良さ(cos^2)
+```{r pca3.3}
+#表現の良さ(cos^2)
+pc_cos2<-var_vals$cos2
+print(pc_cos2,digits=3)
+```
+
+##相関図
+```{r pca3.4, fig.height = 6, fig.width = 6, fig.align="center"}
+#相関図
+fviz_pca_var(gt_pca, col.var = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), repel = TRUE)
+```
+
+##その他の図
+```{r pca4　, fig.height = 5, fig.width = 5, fig.align="center"}
+#観測変数の主成分への寄与
+fviz_contrib(gt_pca, choice = "var", axes = 1)
+fviz_contrib(gt_pca, choice = "var", axes = 2)
+fviz_contrib(gt_pca, choice = "var", axes = 3)
+fviz_contrib(gt_pca, choice = "var", axes = 4)
+```
+
+##個体の主成分得点
+```{r pca5}
+#個体に関する値
+ind_vals<-get_pca_ind(gt_pca)
+
+#個体の主成分得点
+ind_scores<-ind_vals$coord
+print(ind_scores,digits=3)
+```
+
+##個体の主成分得点図（2次元）
+
+以下の図から神戸市に所属する市区町村のほとんどは左側に、淡路島などの地域は右側にきている。
+
+```{r pca6, fig.height = 9, fig.width = 9, fig.align="center"}
+#個体の主成分得点図（2次元）
+fviz_pca_ind(gt_pca, col.ind = "cos2", pointsize=2,gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), repel = TRUE)
+```
+
+##個体の主成分得点図（1次元）
+
+真ん中の水色のデータポイントの表現の良さは0.25を下回っており少し怪しい。
+```{r pca7,fig.height = 9, fig.width = 9, fig.align="center"}
+#個体の主成分得点図（1次元）
+inc<-data.table("Municipality"=rownames(gt), "Dim1"=ind_vals$coord[,1], "cos2"=ind_vals$cos2[,1])
+inc<-inc[order(rank(Dim1))]
+ggplot(inc, aes(x= 1:49, y=Dim1))+  geom_point(aes(colour = cos2), size=2) + scale_colour_gradient(low = "#00AFBB", high = "#FC4E07") +  
+  geom_label_repel(aes(label = Municipality,colour = cos2))+theme_minimal()+xlab("Municipalities")
+```
